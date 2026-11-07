@@ -1,0 +1,28 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# macOS
+.DS_Store
+
+# MLflow
+mlflow.db
+mlruns/
+mlartifacts/
+
+# Data
+simulated-data-raw/
+
+# Trained models
+*.joblib
+*.pkl
+
+# Credentials
+.env
+.env.*
+!.env.example
+
+# Jupyter
+.ipynb_checkpoints/
