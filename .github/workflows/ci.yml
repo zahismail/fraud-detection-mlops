@@ -1,5 +1,5 @@
 
-name: Fraud Detection CI
+name: Fraud Detection CI/CD
 
 on:
   push:
@@ -26,16 +26,29 @@ jobs:
       - name: Run automated tests
         run: python -m pytest tests/ -v
 
-
-  
   build:
     needs: test
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Download repository
         uses: actions/checkout@v6
 
-      - name: Build Docker image
-        run: docker build -t fraud-detection-api:ci .
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build and optionally publish
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
