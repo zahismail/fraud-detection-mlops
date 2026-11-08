@@ -15,7 +15,7 @@ app = FastAPI(title="Fraud Detection API")
 
 # Charger le modèle une seule fois au démarrage
 mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI","http://127.0.0.1:5000"))
-model = mlflow.sklearn.load_model("models:/fraud-detection-model/1")
+model = mlflow.sklearn.load_model("models:/fraud-detection-model@champion")
 
 
 # Schéma des données reçues
