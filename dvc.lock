@@ -1,0 +1,37 @@
+schema: '2.0'
+stages:
+  prepare:
+    cmd: python prepare.py
+    deps:
+    - path: data
+      hash: md5
+      md5: c5e3a5c7612c87bfa64e5da059b05cd3.dir
+      size: 107121710
+      nfiles: 183
+    - path: prepare.py
+      hash: md5
+      md5: 7bdd5c138e9572bdc8ae9a18d159a16e
+      size: 1162
+    outs:
+    - path: processed
+      hash: md5
+      md5: 521f14ace78e608e889064e36961aa9c.dir
+      size: 106874312
+      nfiles: 3
+  train:
+    cmd: python train.py
+    deps:
+    - path: processed
+      hash: md5
+      md5: 521f14ace78e608e889064e36961aa9c.dir
+      size: 106874312
+      nfiles: 3
+    - path: train.py
+      hash: md5
+      md5: 9cc48bf78755713723d78cc2d8aee7e5
+      size: 1992
+    outs:
+    - path: fraud_model.joblib
+      hash: md5
+      md5: 373edcc034405830c3f8ec5e633afe5e
+      size: 1713
