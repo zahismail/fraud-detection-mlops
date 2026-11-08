@@ -9,7 +9,7 @@ import mlflow
 import mlflow.sklearn
 
 import os
-
+import time
 
 app = FastAPI(title="Fraud Detection API")
 
@@ -32,19 +32,15 @@ def health():
 
 @app.post("/predict")
 def predict(transaction: Transaction):
+    start = time.perf_counter()
 
-    features = [
-        "TX_AMOUNT",
-        "TX_HOUR",
-        "TX_DAY_OF_WEEK"
-    ]
-
-    data = pd.DataFrame(
-        [transaction.model_dump()]
-    )[features]
+    features = ["TX_AMOUNT", "TX_HOUR", "TX_DAY_OF_WEEK"]
+    data = pd.DataFrame([transaction.model_dump()])[features]
 
     prediction = model.predict(data)[0]
 
-    return {
-        "is_fraud": int(prediction)
-    }
+    latency = time.perf_counter() - start
+
+    print(f"Prediction latency: {latency:.4f} seconds", flush=True)
+
+    return {"is_fraud": int(prediction)}
