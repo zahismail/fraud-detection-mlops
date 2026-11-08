@@ -68,7 +68,7 @@ flowchart TD
 - Git et DVC.
 - Docker Desktop pour exécuter l'API en conteneur.
 - Accès à un serveur MLflow (dans ce projet, lancé localement sur le port `5001`).
-- Accès aux données DVC : le stockage distant configuré pendant le développement est **un dossier local sur le Mac** ; il n'est pas accessible automatiquement depuis une autre machine.
+- Accès aux données DVC : le stockage distant configuré pendant le développement est **un dossier local sur la machine local** ; il n'est pas accessible automatiquement depuis une autre machine.
 
 ### Récupérer le projet
 
