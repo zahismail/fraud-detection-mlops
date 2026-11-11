@@ -19,6 +19,17 @@ df = df.sort_values("TX_DATETIME").reset_index(drop=True)
 
 # 3. Create features
 df["TX_HOUR"] = df["TX_DATETIME"].dt.hour
+df["CUSTOMER_AVG_AMOUNT"] = (
+    df.groupby("CUSTOMER_ID")["TX_AMOUNT"]
+      .transform(lambda x: x.shift(1).expanding().mean())
+)
+df["CUSTOMER_TX_COUNT"] = (
+    df.groupby("CUSTOMER_ID").cumcount()
+)
+df["AMOUNT_TO_AVG_RATIO"] = (
+    df["TX_AMOUNT"] /
+    df["CUSTOMER_AVG_AMOUNT"].clip(lower=1)
+)
 df["TX_DAY_OF_WEEK"] = df["TX_DATETIME"].dt.day_of_week
 
 # 4. Split data

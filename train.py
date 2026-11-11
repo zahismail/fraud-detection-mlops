@@ -11,13 +11,15 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import precision_score, recall_score, f1_score
 
+from sklearn.impute import SimpleImputer
+
 # 1. Load prepared datasets
 base_dir = Path(__file__).resolve().parent
 
 train_df = pd.read_pickle(base_dir / "processed/train.pkl")
 val_df = pd.read_pickle(base_dir / "processed/val.pkl")
 
-features = ["TX_AMOUNT", "TX_HOUR", "TX_DAY_OF_WEEK"]
+features = ["TX_AMOUNT","TX_HOUR","TX_DAY_OF_WEEK","CUSTOMER_AVG_AMOUNT","CUSTOMER_TX_COUNT","AMOUNT_TO_AVG_RATIO"]
 
 X_train = train_df[features]
 y_train = train_df["TX_FRAUD"]
@@ -35,12 +37,13 @@ mlflow.set_experiment("fraud-detection")
 with mlflow.start_run(run_name="logistic-regression-reproducible"):
 
     pipeline = Pipeline([
-        ("scaler", StandardScaler()),
-        ("model", LogisticRegression(
-            class_weight="balanced",
-            max_iter=1000
-        ))
-    ])
+    ("imputer", SimpleImputer(strategy="median")),
+    ("scaler", StandardScaler()),
+    ("model", LogisticRegression(
+        class_weight="balanced",
+        max_iter=1000
+    ))
+  ])
 
     pipeline.fit(X_train, y_train)
 
@@ -69,7 +72,8 @@ with mlflow.start_run(run_name="logistic-regression-reproducible"):
     # 6. Save model in MLflow
     mlflow.sklearn.log_model(
         sk_model=pipeline,
-        name="fraud_model"
+        name="fraud_model",
+        skops_trusted_types=["numpy.dtype"]
     )
 
 print("Training completed successfully!")

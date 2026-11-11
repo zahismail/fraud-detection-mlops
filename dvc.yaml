@@ -6,7 +6,7 @@ stages:
       - data
     outs:
       - processed
-
+      #commentaire
   train:
     cmd: python train.py
     deps:
@@ -14,3 +14,4 @@ stages:
       - processed
     outs:
       - fraud_model.joblib
+      #commentaire
