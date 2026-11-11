@@ -1,30 +1,33 @@
+
 # Détection de fraude transactionnelle — Pipeline MLOps
 
-> Mini-projet d'industrialisation d'un pipeline de Machine Learning classique, de la préparation des données à l'exposition d'une API de prédiction.
+> Mini-projet d'industrialisation d'un pipeline de Machine Learning, de la préparation des données à l'exposition d'une API de prédiction.
 
 ## 1. Présentation
 
-Ce projet illustre la mise en place d'une démarche **MLOps** pour la détection de transactions potentiellement frauduleuses. Il associe un modèle de classification supervisée à des outils de **versionnement des données**, de **suivi des expériences**, de **déploiement conteneurisé** et d'**intégration continue**.
+Ce projet illustre une démarche **MLOps** appliquée à la détection de transactions potentiellement frauduleuses. Il associe un modèle de classification supervisée au **versionnement des données**, au **suivi des expériences**, au **déploiement conteneurisé**, à l'**intégration continue** et à une analyse de dérive des données.
 
 **Objectifs :**
-- Préparer des transactions et entraîner un modèle de classification reproductible.
+
+- Préparer les transactions et entraîner un modèle de manière reproductible.
 - Suivre les expériences et gérer les versions du modèle avec MLflow.
 - Exposer les prédictions via une API REST FastAPI.
 - Conteneuriser l'application avec Docker et automatiser les tests et la publication de l'image avec GitHub Actions.
 - Versionner les données et les dépendances du pipeline avec DVC.
+- Étudier la dérive des variables avec Evidently, à partir de rapports générés hors ligne.
 
-**Technologies :** Python, pandas, scikit-learn, MLflow, DVC, FastAPI, Pydantic, Docker, Git, GitHub Actions et GitHub Container Registry (GHCR).
+**Technologies :** Python, pandas, scikit-learn, MLflow, DVC, FastAPI, Pydantic, Docker, Git, GitHub Actions, GitHub Container Registry (GHCR) et Evidently.
 
-Le jeu de données utilisé provient de données transactionnelles simulées au format `.pkl`. Il comprend **1 754 155 transactions**, réparties chronologiquement entre entraînement, validation et test.
+Le jeu de données provient de transactions simulées au format `.pkl`. Il comprend **1 754 155 transactions**, dont environ **0,84 % de fraudes**.
 
 ## 2. Architecture
 
 ```mermaid
 flowchart TD
     A[Transactions brutes .pkl] --> B[DVC : suivi des données]
-    B --> C[prepare.py : préparation et découpage temporel]
+    B --> C[prepare.py : variables et découpage temporel]
     C --> D[processed/train.pkl, val.pkl, test.pkl]
-    D --> E[train.py : StandardScaler + LogisticRegression]
+    D --> E[train.py : imputation, normalisation, régression logistique]
     E --> F[MLflow : expériences et artefacts]
     F --> G[MLflow Model Registry]
     G --> H[Alias champion]
@@ -33,6 +36,7 @@ flowchart TD
     K[GitHub : code source] --> L[GitHub Actions : tests et build]
     L --> M[GHCR : image Docker]
     M -. image déployable .-> J
+    D --> N[Evidently : analyse de dérive hors ligne]
 ```
 
 ### Organisation du dépôt
@@ -43,32 +47,47 @@ flowchart TD
 | `prepare.py` | Lecture des données, création des variables et séparation chronologique |
 | `train.py` | Entraînement, évaluation sur validation et journalisation MLflow |
 | `app.py` | API FastAPI de prédiction |
-| `set_chmapion.py` | Attribution manuelle de l'alias `champion` à une version enregistrée (nom actuel du script) |
+| `set_chmapion.py` | Attribution manuelle de l'alias `champion` (orthographe actuelle du script) |
 | `dvc.yaml` | Définition des étapes `prepare` et `train` |
 | `dvc.lock` | Empreintes des dépendances et sorties de la dernière exécution DVC |
 | `data.dvc` | Métadonnées de suivi du jeu de données brut |
 | `Dockerfile` | Construction de l'image de l'API |
 | `.github/workflows/ci.yml` | Pipeline CI de tests et publication de l'image |
+| `monitoring/` | Rapports de dérive, lorsqu'ils ont été générés |
 
 ### Pipeline d'apprentissage
 
-1. Chargement des fichiers `.pkl` et tri par `TX_DATETIME`.
-2. Création des variables `TX_HOUR` et `TX_DAY_OF_WEEK`.
-3. Découpage chronologique : **70 % entraînement**, **15 % validation**, **15 % test**.
-4. Entraînement d'un pipeline `StandardScaler` + `LogisticRegression(class_weight="balanced")` sur `TX_AMOUNT`, `TX_HOUR` et `TX_DAY_OF_WEEK`.
-5. Calcul des métriques sur la validation et enregistrement dans MLflow.
+1. Chargement des fichiers `.pkl` et tri chronologique par `TX_DATETIME`.
+2. Création des variables temporelles `TX_HOUR` et `TX_DAY_OF_WEEK`.
+3. Création de variables de comportement client à partir des transactions antérieures : `CUSTOMER_AVG_AMOUNT`, `CUSTOMER_TX_COUNT` et `AMOUNT_TO_AVG_RATIO`.
+4. Découpage chronologique : **70 % entraînement**, **15 % validation**, **15 % test**.
+5. Entraînement d'un pipeline `SimpleImputer(strategy="median")` → `StandardScaler` → `LogisticRegression(class_weight="balanced", max_iter=1000)`.
+6. Calcul des métriques sur la validation avec un **seuil de classification de 0,82**, puis journalisation dans MLflow.
 
-> Le prétraitement de normalisation est intégré au pipeline scikit-learn : il est ajusté uniquement sur les données d'entraînement.
+Les **six variables d'entrée** sont :
+
+```text
+TX_AMOUNT
+TX_HOUR
+TX_DAY_OF_WEEK
+CUSTOMER_AVG_AMOUNT
+CUSTOMER_TX_COUNT
+AMOUNT_TO_AVG_RATIO
+```
+
+L'imputation et la normalisation sont ajustées uniquement sur les données d'entraînement. Les variables historiques doivent être calculées sans utiliser d'informations futures ; leur cohérence avec le traitement des transactions en production reste à vérifier.
+
+**Important :** le seuil `0.82` est appliqué explicitement aux probabilités retournées par `predict_proba()`. Il n'est pas intégré automatiquement à `pipeline.predict()`.
 
 ## 3. Installation
 
 ### Prérequis
 
-- Python et `pip` (environnement utilisé pendant le développement : Python 3.14).
+- Python et `pip` (environnement de développement utilisé : Python 3.14).
 - Git et DVC.
 - Docker Desktop pour exécuter l'API en conteneur.
-- Accès à un serveur MLflow (dans ce projet, lancé localement sur le port `5001`).
-- Accès aux données DVC : le stockage distant configuré pendant le développement est **un dossier local sur la machine local** ; il n'est pas accessible automatiquement depuis une autre machine.
+- Un serveur MLflow local, sur le port `5001`.
+- Accès aux données DVC : le remote configuré pendant le développement est **un dossier local sur la machine de développement**, non accessible automatiquement depuis une autre machine.
 
 ### Récupérer le projet
 
@@ -79,42 +98,49 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-Installer les dépendances déclarées dans le dépôt, **si un fichier `requirements.txt` est présent** :
+Si le dépôt contient un fichier `requirements.txt` :
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Sinon, installer les dépendances nécessaires au pipeline local :
+Sinon, pour installer les principales dépendances du pipeline local :
 
 ```bash
-pip install pandas scikit-learn mlflow dvc joblib fastapi uvicorn pydantic
+pip install pandas scikit-learn mlflow dvc joblib fastapi uvicorn pydantic evidently
 ```
+
+Pour une reproduction stricte, utiliser les versions des dépendances validées avec le projet.
 
 ### Données
 
-Le dossier `data/` est suivi par DVC, et non stocké directement dans Git. Sur la machine où le remote DVC est disponible :
+Le dossier `data/` est suivi par DVC, et non stocké directement dans Git. Sur la machine où le remote DVC est accessible :
 
 ```bash
 dvc pull
 ```
 
-Sur une autre machine, il faut d'abord configurer un stockage DVC accessible ou obtenir les données par un canal autorisé. Le simple `git clone` ne suffit pas à télécharger le dataset.
+Sur une autre machine, il faut d'abord configurer un stockage DVC accessible ou obtenir les données par un canal autorisé. Un simple `git clone` ne télécharge pas le dataset.
 
 ## 4. Exécution
 
 ### A. Lancer MLflow
 
-Dans un terminal avec l'environnement activé :
+Depuis la racine du projet, dans un terminal avec l'environnement activé :
 
 ```bash
-mlflow server --host 0.0.0.0 --port 5001 \
+mlflow server \
+  --backend-store-uri sqlite:///mlflow.db \
+  --host 0.0.0.0 \
+  --port 5001 \
   --allowed-hosts "localhost:*,127.0.0.1:*,host.docker.internal:*"
 ```
 
-Interface : **http://127.0.0.1:5001**.
+**Interface MLflow :** http://127.0.0.1:5001
 
-> Dans cette configuration de démonstration, le serveur MLflow tourne sur le Mac, en dehors du conteneur Docker. Conserver sa base de données et ses artefacts pour retrouver les expériences et modèles enregistrés.
+Le nom d'hôte `host.docker.internal` est utilisé par le conteneur Docker pour joindre MLflow sur le Mac. L'option `--allowed-hosts` évite le refus HTTP `403 Invalid Host header` lorsque ce nom est utilisé.
+
+> **Sécurité :** cette configuration est destinée au développement local. `--host 0.0.0.0` écoute sur toutes les interfaces réseau : ne pas exposer ce serveur à un réseau non fiable sans protections supplémentaires. Lancer MLflow depuis le bon répertoire permet de retrouver la base `mlflow.db` attendue.
 
 ### B. Reproduire le pipeline avec DVC
 
@@ -122,41 +148,45 @@ Interface : **http://127.0.0.1:5001**.
 dvc repro
 ```
 
-DVC exécute les étapes nécessaires de préparation et d'entraînement, ou les ignore si les dépendances et sorties sont inchangées.
+DVC exécute les étapes nécessaires de préparation et d'entraînement, ou les ignore si leurs dépendances et sorties sont inchangées.
 
-Pour sauvegarder les sorties suivies par DVC vers le stockage configuré :
+Pour envoyer les sorties suivies vers le stockage DVC configuré :
 
 ```bash
 dvc push
 ```
 
-Les métriques de validation sont visibles dans MLflow. L'exécution de `train.py` crée une nouvelle expérience et un modèle journalisé, **sans promouvoir automatiquement** celui-ci dans le registre.
+Les métriques de validation sont visibles dans MLflow. `train.py` journalise un modèle et ses métriques, **sans promouvoir automatiquement** une nouvelle version dans le registre.
 
 ### C. Choisir le modèle servi
 
-Le modèle de production de la démonstration est sélectionné par l'alias MLflow `champion`.
-
-```bash
-python set_chmapion.py 1
-```
-
-Cette commande associe `champion` à la version enregistrée **1**. Pour une autre version approuvée, remplacer `1` par son numéro. La promotion est **manuelle**, après vérification des performances.
-
-L'API charge le modèle par l'URI :
+L'API charge la version enregistrée sous l'alias MLflow `champion` :
 
 ```text
 models:/fraud-detection-model@champion
 ```
 
-### D. Lancer l'API avec Docker
+Après avoir enregistré et vérifié une version du modèle dans **MLflow Model Registry**, attribuer l'alias à son numéro de version approuvé :
 
-Construire une image locale :
+```bash
+python set_chmapion.py <numero_de_version>
+```
+
+Par exemple, remplacer `<numero_de_version>` par le numéro affiché dans le registre. **Ne pas conserver automatiquement la version 1** : elle peut correspondre à l'ancien modèle à trois variables.
+
+Avant de lancer l'API mise à jour, vérifier que `champion` pointe vers un modèle entraîné avec les **six variables**. Changer l'alias nécessite de redémarrer l'API pour recharger le modèle.
+
+### D. Construire et lancer l'API avec Docker
+
+**1.** Vérifier que MLflow est démarré (section A) et que l'alias `champion` est correct (section C).
+
+**2.** Construire l'image après toute modification de `app.py`, du `Dockerfile` ou des dépendances intégrées :
 
 ```bash
 docker build -t fraud-detection-api .
 ```
 
-Exécuter le conteneur sur macOS avec MLflow accessible depuis l'hôte :
+**3.** Lancer le conteneur sur macOS :
 
 ```bash
 docker run --rm --name fraud-detection-api \
@@ -165,34 +195,37 @@ docker run --rm --name fraud-detection-api \
   fraud-detection-api
 ```
 
-Le serveur MLflow doit être lancé **avant** le conteneur pour que l'API puisse charger le modèle au démarrage.
+L'API charge le modèle `champion` au démarrage. MLflow doit donc être accessible **avant** le lancement du conteneur.
 
-- Documentation interactive : **http://127.0.0.1:8000/docs**
-- Vérification de santé : **http://127.0.0.1:8000/health**
-- Prédiction : **POST http://127.0.0.1:8000/predict**
-
-**Remarque :** après changement de l'alias `champion`, redémarrer le conteneur afin de recharger le modèle.
+- Documentation interactive : http://127.0.0.1:8000/docs
+- Vérification de santé : http://127.0.0.1:8000/health
+- Prédiction : **POST** http://127.0.0.1:8000/predict
 
 ## 5. Démonstration
 
 ### Scénario 1 — Prédire une transaction
 
-1. Démarrer MLflow et l'API Docker.
-2. Ouvrir **http://127.0.0.1:8000/docs**.
+1. Démarrer MLflow, vérifier `champion`, puis lancer l'API Docker.
+2. Ouvrir http://127.0.0.1:8000/docs.
 3. Sélectionner **POST `/predict`**, puis **Try it out**.
-4. Envoyer une transaction de test :
+4. Envoyer cet exemple de transaction :
 
 ```json
 {
-  "TX_AMOUNT": 120.0,
-  "TX_HOUR": 14,
-  "TX_DAY_OF_WEEK": 2
+  "TX_AMOUNT": 500,
+  "TX_HOUR": 23,
+  "TX_DAY_OF_WEEK": 5,
+  "CUSTOMER_AVG_AMOUNT": 50,
+  "CUSTOMER_TX_COUNT": 12,
+  "AMOUNT_TO_AVG_RATIO": 10
 }
 ```
 
-5. Observer la réponse JSON réelle de l'API et les logs de latence du conteneur.
+5. Observer la réponse JSON de l'API et les logs de latence du conteneur.
 
-> L'exemple ci-dessus est une **entrée** de démonstration ; aucune classe prédite n'est indiquée ici, car elle dépend du modèle effectivement chargé.
+Si `app.py` correspond à la version mise à jour, la réponse comporte `is_fraud` (`0` ou `1`) et `fraud_probability` (probabilité estimée). La classification utilise le seuil **0,82**.
+
+> Ces valeurs sont fictives. Elles servent uniquement à tester l'API et ne garantissent pas une classe prédite particulière. Dans cette démonstration, les variables historiques sont fournies dans la requête ; une application réelle devrait les calculer à partir de l'historique client de manière cohérente avec l'entraînement.
 
 ### Scénario 2 — Reproductibilité DVC
 
@@ -200,35 +233,45 @@ Le serveur MLflow doit être lancé **avant** le conteneur pour que l'API puisse
 dvc repro
 ```
 
-Sans modification des fichiers suivis, DVC doit ignorer les étapes déjà à jour. Si `train.py` change, l'étape d'entraînement est réexécutée sans refaire inutilement la préparation des données.
+Sans modification des fichiers suivis, DVC ignore les étapes déjà à jour. Si `train.py` change, l'entraînement est réexécuté sans refaire inutilement la préparation des données.
 
 ### Scénario 3 — Traçabilité MLflow
 
-Ouvrir MLflow, consulter l'expérience `fraud-detection`, comparer les runs et visualiser les versions du modèle `fraud-detection-model` dans **Model Registry**. Vérifier l'alias `champion`.
+Dans l'expérience `fraud-detection`, consulter les runs et comparer les métriques. Dans **Model Registry**, examiner les versions de `fraud-detection-model` et vérifier l'alias `champion`.
 
 ### Scénario 4 — Intégration continue
 
 Dans GitHub, ouvrir l'onglet **Actions** pour consulter les tests et la construction de l'image Docker. L'image publiée est disponible dans **GitHub Container Registry**, sous réserve du succès du workflow.
 
+### Scénario 5 — Analyse de dérive avec Evidently
+
+Consulter les rapports HTML générés dans `monitoring/` : comparaison de référence et simulation d'une dérive de `TX_AMOUNT`. Il s'agit d'une **analyse hors ligne**, pas d'un système de surveillance continue en production.
+
 ### Résultats obtenus
 
-| Indicateur | Validation |
-|---|---:|
-| Precision | 0,0165 (1,65 %) |
-| Recall | 0,4484 (44,84 %) |
-| F1-score | 0,0318 (3,18 %) |
+Résultats du modèle à six variables sur le **jeu de validation** :
 
-Ces valeurs proviennent de l'exécution documentée du pipeline de réentraînement ; elles ne garantissent pas les performances de toutes les versions enregistrées. Le modèle présente de nombreuses fausses alertes et **n'est pas adapté à un usage réel sans améliorations supplémentaires**.
+| Indicateur | Seuil 0,50 | Seuil 0,82 |
+|---|---:|---:|
+| Precision | 1,45 % | **76,64 %** |
+| Recall | **57,32 %** | 28,70 % |
+| F1-score | 2,84 % | **41,77 %** |
+
+Le seuil **0,82** donne le meilleur F1-score parmi les seuils testés. Cependant, il réduit sensiblement le recall : le modèle détecte moins de fraudes qu'au seuil 0,50. Le choix du seuil dépend donc du coût des fausses alertes et des fraudes manquées.
+
+**Ces chiffres proviennent de la validation, utilisée pour sélectionner le seuil.** Il faut encore évaluer le modèle et le seuil retenu sur le **jeu de test** avant de considérer ces performances comme confirmées.
 
 ## 6. Limites et perspectives
 
-- La sélection du modèle `champion` est manuelle ; aucune promotion automatique n'est implémentée.
-- Le suivi actuel de la latence ne constitue pas une supervision complète (pas de détection automatique de dérive).
+- La promotion du modèle `champion` est manuelle ; aucune promotion automatique n'est implémentée.
+- L'API de démonstration reçoit les variables historiques dans la requête : leur calcul automatique à partir des transactions précédentes reste à industrialiser.
+- Le seuil `0,82` améliore la précision et le F1-score sur la validation, mais réduit le recall.
+- La vérification finale sur le jeu de test et l'audit des risques de fuite de données des variables historiques restent nécessaires.
+- La mesure de latence et les rapports Evidently hors ligne ne constituent pas une supervision continue complète.
 - Le stockage DVC est local et nécessite une configuration supplémentaire pour une collaboration distante.
 - Le serveur MLflow local doit rester accessible lors du démarrage de l'API.
-- Les performances du modèle sont modestes : le projet vise d'abord la **démonstration de l'industrialisation MLOps**.
 
-**Améliorations possibles :** évaluation comparative automatisée, critères de promotion, stockage partagé, tests de dérive et déploiement sur une infrastructure distante.
+**Améliorations possibles :** évaluation sur test, choix du seuil fondé sur les coûts métier, calcul des variables historiques dans l'API, suivi de dérive automatisé, critères de promotion et stockage partagé.
 
 ---
 

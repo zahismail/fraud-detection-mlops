@@ -28,8 +28,8 @@ stages:
       nfiles: 3
     - path: train.py
       hash: md5
-      md5: 990d98fa83760f5ddffc78c998775ea1
-      size: 2170
+      md5: 9653a86f432d7f6f055306c842e458a8
+      size: 2318
     outs:
     - path: fraud_model.joblib
       hash: md5

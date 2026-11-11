@@ -46,8 +46,13 @@ with mlflow.start_run(run_name="logistic-regression-reproducible"):
   ])
 
     pipeline.fit(X_train, y_train)
+#----------------------
+   
 
-    predictions = pipeline.predict(X_val)
+#-------------------   
+    threshold=0.82     
+    probabilities = pipeline.predict_proba(X_val)[:,1]
+    predictions = (probabilities >= threshold).astype(int)
 
     precision = precision_score(y_val, predictions, zero_division=0)
     recall = recall_score(y_val, predictions, zero_division=0)
